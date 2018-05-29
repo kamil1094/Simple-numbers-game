@@ -1,7 +1,5 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
-// import axios from 'axios';
-// import { Navbar, Jumbotron } from 'react-bootstrap';
 
 import '../node_modules/bootstrap/dist/css/bootstrap.css';
 import '../node_modules/font-awesome/css/font-awesome.min.css';
@@ -40,6 +38,10 @@ const Stars = (props) => {
 };
 
 const Button = (props) => {
+  const handleClick = () => {
+    props.redraw();
+    props.startTimer();
+  }
   let button;
   switch(props.answerIsCorrect) {
     case true:
@@ -68,7 +70,7 @@ const Button = (props) => {
       {button}
       <br /><br />
       <button className="btn btn-warning btn-sm" 
-        onClick={props.redraw} 
+        onClick={handleClick} 
         disabled={props.redraws === 0}>
           <i className="fa fa-refresh"></i>
           {props.redraws}
@@ -90,6 +92,14 @@ const Answer = (props) => {
 }
 
 const Numbers = (props) => {
+  const list = [];
+  for(let i=0; i<9; i++) {
+    list[i] = i+1;
+  }
+  const handleClick = (number) => {
+    props.selectNumber(number);
+    props.startTimer();
+  }
   const numberClassName = (number) => {
     if(props.usedNumbers.indexOf(number) >= 0) {
       return 'used';
@@ -102,42 +112,60 @@ const Numbers = (props) => {
   return (
     <div className="card text-center">
       <div>
-        {Numbers.list.map((number, i) =>
+        {list.map((number, i) =>
           <span key={i} className={numberClassName(number)}
-            onClick={() => props.selectNumber(number)}
+            onClick={() => handleClick(number)}
           >{number}</span>)}
       </div>
     </div>
   );
 }
 
-Numbers.list = [];
-for(let i=0; i<9; i++) {
-  Numbers.list[i] = i+1;
+const Timer = (props) => {
+  const checkTimerStatus = (time) => {
+    if (time >= 15) return 'btn btn-primary'
+    if (time >= 5 && time < 15) return 'btn btn-alert'
+    if (time < 5) return 'btn btn-danger'
+  }
+  return (
+    <div>
+      <button disabled className={checkTimerStatus(props.time)} onClick={props.startTimer}>
+      {props.time}
+      </button>
+    </div>
+    
+  )
 }
 
 const DoneFrame = (props) => {
   return (
     <div className="text-center">
     <h2>{props.doneStatus}</h2>
+    <button className="btn btn-secondary" onClick={props.resetGame}>Play Again</button>
     </div>
   )
 }
 
 class Game extends React.Component {
   static randomNumber = () => 1 + Math.floor(Math.random()*9);
-  state = {
+  static initialState = () => ({
     selectedNumbers: [],
     randomNumberOfStars: Game.randomNumber(),
     answerIsCorrect: null,
     usedNumbers: [],
     redraws: 5,
-    doneStatus: ''
-  };
+    doneStatus: null,
+    time: 15,
+    running: false
+  });
+
+  state = Game.initialState();
+
+  resetGame = () => this.setState(Game.initialState());
 
   selectNumber = (clickedNumber) => {
     if (this.state.selectedNumbers.indexOf(clickedNumber) >= 0) { return; }
-    //if (this.state.usedNumbers.indexOf(clickedNumber) >= 0) { return; }
+    if (this.state.usedNumbers.indexOf(clickedNumber) >= 0) { return; }
     this.setState(prevState => ({
       answerIsCorrect: null,
       selectedNumbers: prevState.selectedNumbers.concat(clickedNumber)
@@ -153,10 +181,15 @@ class Game extends React.Component {
   }
 
   checkAnswer = () => {
+    const addBonusTime = () => {
+      this.setState(prevState => {
+        if(prevState.answerIsCorrect === true) return {time: prevState.time + 10}
+      });
+    }
     this.setState(prevState => ({
       answerIsCorrect: prevState.randomNumberOfStars ===
-        prevState.selectedNumbers.reduce((acc, n) => acc + n, 0) //calculates the sum of numbers in array
-    }));
+        prevState.selectedNumbers.reduce((acc, n) => acc + n, 0),
+    }), addBonusTime);
   }
 
   acceptAnswer = () => {
@@ -180,23 +213,56 @@ class Game extends React.Component {
 
   possibleSolutions = ({randomNumberOfStars, usedNumbers}) => {
     const possibleNumbers = [];
-    for(let i=0; i<10; i++){
-      possibleNumbers[i] = i;
+    for(let i=0; i<9; i++){
+      possibleNumbers[i] = i+1;
     }
-    possibleNumbers.filter(number => usedNumbers.indexOf(number) === -1);
 
-    return possibleCombinationSum(possibleNumbers, randomNumberOfStars);
+    let possible = possibleNumbers.filter(number => 
+      usedNumbers.indexOf(number) === -1
+    );
+
+    return possibleCombinationSum(possible, randomNumberOfStars);
   }
 
   updateDoneStatus = () => {
     this.setState(prevState => {
       if(prevState.usedNumbers.length === 9) {
-        return {doneStatus: 'Done. Nice!'};
+        return {
+          doneStatus: 'Done. Nice!',
+          time: 0
+        };
       }
       if(prevState.redraws === 0 && !this.possibleSolutions(prevState)) {
-        return {doneStatus: 'Game Over!'};
+        return {
+          doneStatus: 'Game Over!',
+          time: 0
+        };
       }
     })
+  }
+
+  
+  startTimer = () => {
+    let time;
+
+    const setTimer = () => {
+      let interval = setInterval(() => {
+        this.setState(prevState => {
+          if(this.state.time === 0) {
+            clearInterval(interval);
+            return {doneStatus: 'Game Over!'};
+          } else {
+            time = prevState.time - 1;
+            return {time: time};
+          }
+        });
+      }, 1000);
+    }
+    
+    if(this.state.running === true) return;
+    this.setState(prevState => ({
+      running: true
+    }), setTimer);    
   }
 
   render () {
@@ -206,11 +272,13 @@ class Game extends React.Component {
       answerIsCorrect,
       usedNumbers,
       redraws,
-      doneStatus
+      doneStatus,
+      time
     } = this.state;
     return (
       <div className="container">
         <h3>Play Nine</h3>
+        <Timer time={time} startTimer={this.startTimer}/>
         <hr />
         <div className="row">
           <Stars stars={randomNumberOfStars} />
@@ -221,6 +289,7 @@ class Game extends React.Component {
             acceptAnswer={this.acceptAnswer}
             redraw={this.redraw}
             redraws={redraws}
+            startTimer={this.startTimer}
           />
           <Answer 
             selectedNumbers={selectedNumbers} 
@@ -230,11 +299,12 @@ class Game extends React.Component {
         <br />
         <br />
         {doneStatus ?
-          <DoneFrame doneStatus={doneStatus}/> :
+          <DoneFrame resetGame={this.resetGame} doneStatus={doneStatus}/> :
           <Numbers 
             selectedNumbers={selectedNumbers}
             selectNumber={this.selectNumber}
             usedNumbers={usedNumbers}
+            startTimer={this.startTimer}
           />
         }
         
@@ -255,7 +325,3 @@ class App extends React.Component {
 
 
 ReactDOM.render(<App />, document.getElementById('root'));
-
-
-
-// sprawdzic jak poradzic sobie z tym ze onClick handler potrzebuje referencji funkcji a nie wywolania(za pomoca class based components)
